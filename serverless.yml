@@ -1,0 +1,56 @@
+service: cruzi-scraper
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-west-2
+  stage: ${opt:stage, 'dev'}
+  environment:
+    NODE_ENV: ${self:provider.stage}
+    DB_HOST: ${env:DB_HOST}
+    DB_USER: ${env:DB_USER}
+    DB_PASSWORD: ${env:DB_PASSWORD}
+    DB_NAME: ${env:DB_NAME}
+    DB_PORT: ${env:DB_PORT}
+    PUZ_LOCATION: ${env:PUZ_LOCATION}
+    WEBSHARE_PROXY_LIST: ${env:WEBSHARE_PROXY_LIST}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:PutObjectAcl
+          Resource:
+            - arn:aws:s3:::scraped-crosswords
+            - arn:aws:s3:::scraped-crosswords/*
+
+package:
+  include:
+    - dist/**
+
+functions:
+  crosswordScraper:
+    handler: dist/crosswordScraperLambda.handler
+    description: Scrapes crossword puzzles from various sources and loads them into the database
+    timeout: 900
+    memorySize: 1024
+    environment:
+      DB_HOST: ${self:provider.environment.DB_HOST}
+      DB_USER: ${self:provider.environment.DB_USER}
+      DB_PASSWORD: ${self:provider.environment.DB_PASSWORD}
+      DB_NAME: ${self:provider.environment.DB_NAME}
+      DB_PORT: ${self:provider.environment.DB_PORT}
+      PUZ_LOCATION: ${self:provider.environment.PUZ_LOCATION}
+      WEBSHARE_PROXY_LIST: ${self:provider.environment.WEBSHARE_PROXY_LIST}
+
+plugins:
+  - serverless-offline
