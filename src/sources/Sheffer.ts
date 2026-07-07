@@ -4,7 +4,7 @@ import { PuzzleSource } from '../scraper/PuzzleSource';
 
 export class ShefferSource implements PuzzleSource {
   public id = 'Sheffer';
-  public name = 'Eugene Sheffer';
+  public name = 'Sheffer';
 
   public async getPuzzle(date: Date): Promise<ScrapedPuzzle | null> {
     if (date.getDay() === 0) {
@@ -13,12 +13,12 @@ export class ShefferSource implements PuzzleSource {
 
     const puzzle = await fetchKingFeaturesPuzzle('sheffer', date, {
       publicationId: this.id as PublicationId,
-      defaultTitle: 'Eugene Sheffer',
-      parseErrorMessage: 'Failed to parse Eugene Sheffer puzzle data.',
+      defaultTitle: 'Sheffer',
+      parseErrorMessage: 'Failed to parse Sheffer puzzle data.',
     });
 
     if (puzzle) {
-      puzzle.authors = ['Eugene Sheffer'];
+      puzzle.authors = ['Sheffer'];
     }
     return puzzle;
   }

@@ -15,6 +15,7 @@ import {
 } from 'cruzi-models';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getCrosswordCollectionId, ILoaderDao, insertEntries, LoaderDao } from 'cruzi-db';
+import { normalizeScrapedPuzzleAuthors } from './lib/authorNormalization';
 import { formatDateKey, generateId, getPuzzleDate, mapValues, mapWithConcurrency } from './lib/utils';
 import { PuzzleSource, PuzzleSources } from './scraper/PuzzleSource';
 import { configureWebshareProxy } from './lib/webshareProxy';
@@ -139,84 +140,92 @@ async function puzzleAlreadyExists(puzzle: ScrapedPuzzle): Promise<boolean> {
   return collectionId !== null;
 }
 
-async function savePuzzle(puzzle: ScrapedPuzzle, key: string): Promise<void> {
+function requirePuzLocation(): 'S3' | 'local' {
   const puzLocation = process.env.PUZ_LOCATION;
+  if (puzLocation === 'S3' || puzLocation === 'local') {
+    return puzLocation;
+  }
+  throw new Error("PUZ_LOCATION must be set to 'S3' or 'local'; scraper will not run without it.");
+}
 
+async function savePuzzle(puzzle: ScrapedPuzzle, key: string, puzLocation: 'S3' | 'local'): Promise<void> {
   if (puzLocation === 'S3') {
     await uploadPuzzleToS3(puzzle, key);
     return;
   }
 
-  if (puzLocation === 'local') {
-    await savePuzzleToLocal(puzzle, key);
-    return;
-  }
-
-  console.log(`Skipping save for ${key}; PUZ_LOCATION is not set to 'S3' or 'local'.`);
+  await savePuzzleToLocal(puzzle, key);
 }
 
-export const scrapePuzzles = async (): Promise<ScrapedPuzzle[]> => {
+export const scrapePuzzles = async (puzLocation: 'S3' | 'local'): Promise<ScrapedPuzzle[]> => {
   await configureWebshareProxy();
 
-  let scrapedPuzzles = [] as ScrapedPuzzle[]
   const date = getPuzzleDate();
   const dateString = formatDateKey(date);
 
-  await mapWithConcurrency(puzzleSources, SCRAPE_CONCURRENCY, async (source) => {
-    try {
-        let puzzle = await source.getPuzzle(date);
+  const results = await mapWithConcurrency(
+    puzzleSources,
+    SCRAPE_CONCURRENCY,
+    async (source): Promise<ScrapedPuzzle | undefined> => {
+      try {
+        const puzzle = await source.getPuzzle(date);
         if (!puzzle) {
           console.log(`No puzzle found for ${source.name} on ${dateString}`);
-          return;
+          return undefined;
         }
+        normalizeScrapedPuzzleAuthors(puzzle);
         if (!PUZ_FILE_SOURCE_IDS.has(source.id)) {
           normalizePuzzleForPuzEncoding(puzzle);
         }
         if (await puzzleAlreadyExists(puzzle)) {
-          console.log(`Puzzle already exists for ${source.name} on ${formatDateKey(puzzle.date)}, skipping save.`);
-          return;
+          console.log(`Puzzle already exists for ${source.name} on ${formatDateKey(puzzle.date)}, skipping.`);
+          return undefined;
         }
-        scrapedPuzzles.push(puzzle);
 
         const key = getPuzzleStorageKey(puzzle);
-        await savePuzzle(puzzle, key);
+        await savePuzzle(puzzle, key, puzLocation);
 
         console.log(`Scraped puzzle from ${source.name} for date ${dateString}`);
-    } catch (error) {
+        return puzzle;
+      } catch (error) {
         console.error(`Error scraping puzzle from ${source.name} for date ${dateString}: `, error);
-    }
-  });
+        return undefined;
+      }
+    },
+  );
 
-  return scrapedPuzzles;
+  return results.filter((puzzle): puzzle is ScrapedPuzzle => puzzle !== undefined);
 }
 
+// Postgres runs on the same host as this Lambda (not RDS), so no VPC configuration is required.
 let dao: ILoaderDao = new LoaderDao();
 
 let runCrosswordLoadingTasks = async () => {
-  let scrapedPuzzles = [] as ScrapedPuzzle[];
+  const puzLocation = requirePuzLocation();
 
   console.log("Starting crossword loading tasks...");
   try {
-    scrapedPuzzles = await scrapePuzzles();
+    const scrapedPuzzles = await scrapePuzzles(puzLocation);
 
     // Process puzzles sequentially so DB work does not run in parallel. Overlapping
     // transactions on shared rows (e.g. entries, queues) can deadlock when lock
     // order differs between workers.
+    //
+    // It is OK if the Lambda hits its 15-minute timeout before finishing every
+    // source. The next scheduled run (2 AM / 2 PM Eastern) will skip puzzles
+    // already in the database and pick up anything we missed.
     for (const puzzle of scrapedPuzzles) {
       await processPuzzle(puzzle);
     }
 
   } catch (error) {
     console.error("Error in crossword loading tasks: ", error);
+    throw error;
   }
 };
 
 let processPuzzle = async (puzzle: ScrapedPuzzle): Promise<void> => {
   try {
-      if (await puzzleAlreadyExists(puzzle)) {
-        console.log(`Puzzle already exists for ${puzzle.publicationId} on ${formatDateKey(puzzle.date)}, skipping processing.`);
-        return;
-      }
       console.log(`Processing puzzle for ${puzzle.publicationId}`);
       await dao.savePuzzle(puzzle);
       puzzle.id = puzzle.id;

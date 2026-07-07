@@ -125,6 +125,15 @@ export function formatDate(date: Date): string {
   });
 }
 
+/** Crossword title date, e.g. "July 7, 2026". */
+export function formatPuzzleTitleDate(date: Date): string {
+  return toCalendarDate(date).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function parseDateFromURL (date: string | null): Date {
   if (!date) {
     return new Date(); // Return current date if no date is provided

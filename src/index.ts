@@ -1,3 +1,4 @@
+import './loadLocalEnv';
 import { crosswordScraper } from './crosswordScraper';
 
 crosswordScraper()

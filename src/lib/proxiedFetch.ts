@@ -46,7 +46,7 @@ async function executeFetch(
       ...init,
       ...(dispatcher ? { dispatcher } : {}),
     } as Parameters<typeof undiciFetch>[1],
-  )) as Response;
+  )) as unknown as Response;
 }
 
 export async function proxiedFetch(

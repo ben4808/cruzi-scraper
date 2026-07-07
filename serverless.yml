@@ -1,20 +1,23 @@
 service: cruzi-scraper
 frameworkVersion: '4'
+useDotenv: true
 
 provider:
   name: aws
-  runtime: nodejs20.x
+  runtime: nodejs24.x
   region: us-west-2
   stage: ${opt:stage, 'dev'}
   environment:
     NODE_ENV: ${self:provider.stage}
+    # Postgres on EC2; values come from .env.{stage} at deploy time.
     DB_HOST: ${env:DB_HOST}
     DB_USER: ${env:DB_USER}
     DB_PASSWORD: ${env:DB_PASSWORD}
     DB_NAME: ${env:DB_NAME}
     DB_PORT: ${env:DB_PORT}
     PUZ_LOCATION: ${env:PUZ_LOCATION}
-    WEBSHARE_PROXY_LIST: ${env:WEBSHARE_PROXY_LIST}
+    WEBSHARE_API_TOKEN: ${env:WEBSHARE_API_TOKEN}
+    WEBSHARE_PLAN_ID: ${env:WEBSHARE_PLAN_ID, ''}
 
   iam:
     role:
@@ -32,15 +35,35 @@ provider:
           Resource:
             - arn:aws:s3:::scraped-crosswords
             - arn:aws:s3:::scraped-crosswords/*
+        # EventBridge Scheduler permissions (for cron events with timezone)
+        - Effect: Allow
+          Action:
+            - scheduler:CreateSchedule
+            - scheduler:DeleteSchedule
+            - scheduler:GetSchedule
+            - scheduler:UpdateSchedule
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - iam:PassRole
+          Resource: "*"
+          Condition:
+            StringEquals:
+              iam:PassedToService: scheduler.amazonaws.com
 
 package:
-  include:
-    - dist/**
+  patterns:
+    - '!src/**'
+    - '!*.ts'
+    - 'dist/**'
+    - 'node_modules/**'
 
 functions:
   crosswordScraper:
     handler: dist/crosswordScraperLambda.handler
     description: Scrapes crossword puzzles from various sources and loads them into the database
+    # 15 minutes is enough for most runs; timing out is acceptable because the next
+    # scheduled invocation skips existing puzzles and picks up anything we missed.
     timeout: 900
     memorySize: 1024
     environment:
@@ -50,7 +73,90 @@ functions:
       DB_NAME: ${self:provider.environment.DB_NAME}
       DB_PORT: ${self:provider.environment.DB_PORT}
       PUZ_LOCATION: ${self:provider.environment.PUZ_LOCATION}
-      WEBSHARE_PROXY_LIST: ${self:provider.environment.WEBSHARE_PROXY_LIST}
+      WEBSHARE_API_TOKEN: ${self:provider.environment.WEBSHARE_API_TOKEN}
+      WEBSHARE_PLAN_ID: ${self:provider.environment.WEBSHARE_PLAN_ID}
+    events:
+      # 2 AM Eastern — catches overnight/early-morning puzzle drops
+      - schedule:
+          method: scheduler
+          rate: cron(0 2 * * ? *)
+          timezone: America/New_York
+          description: Daily crossword scrape at 2 AM Eastern
+      # 2 PM Eastern — catches afternoon puzzle drops
+      - schedule:
+          method: scheduler
+          rate: cron(0 14 * * ? *)
+          timezone: America/New_York
+          description: Daily crossword scrape at 2 PM Eastern
 
 plugins:
   - serverless-offline
+
+resources:
+  Resources:
+    CrosswordScraperLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-crosswordScraper
+        RetentionInDays: 30
+
+    CrosswordScraperErrorLogMetricFilter:
+      Type: AWS::Logs::MetricFilter
+      DependsOn: CrosswordScraperLogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-crosswordScraper
+        FilterPattern: '?ERROR ?Error ?"Error scraping" ?"Error processing" ?"Error in crossword"'
+        MetricTransformations:
+          - MetricNamespace: CruziScraper
+            MetricName: CrosswordScraperLogErrors
+            MetricValue: 1
+            DefaultValue: 0
+
+    CrosswordScraperLambdaErrorsAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-crosswordScraper-lambda-errors
+        AlarmDescription: Crossword scraper Lambda reported one or more invocation errors
+        Namespace: AWS/Lambda
+        MetricName: Errors
+        Dimensions:
+          - Name: FunctionName
+            Value: ${self:service}-${self:provider.stage}-crosswordScraper
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+
+    CrosswordScraperDurationAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-crosswordScraper-duration
+        AlarmDescription: Crossword scraper Lambda duration exceeded 90% of the 15-minute timeout (acceptable — next run will catch up)
+        Namespace: AWS/Lambda
+        MetricName: Duration
+        Dimensions:
+          - Name: FunctionName
+            Value: ${self:service}-${self:provider.stage}-crosswordScraper
+        Statistic: Maximum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 810000
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+
+    CrosswordScraperLogErrorsAlarm:
+      Type: AWS::CloudWatch::Alarm
+      DependsOn: CrosswordScraperErrorLogMetricFilter
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-crosswordScraper-log-errors
+        AlarmDescription: Crossword scraper logged scrape or processing errors
+        Namespace: CruziScraper
+        MetricName: CrosswordScraperLogErrors
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
