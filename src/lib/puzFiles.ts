@@ -1,6 +1,6 @@
 import { proxiedFetch } from './proxiedFetch';
 import { ScrapedPuzzle, PuzzleEntry } from 'cruzi-models';
-import { newPuzzle, numberizeGrid } from "./puzzle";
+import { countGridSlots, newPuzzle, numberizeGrid } from "./puzzle";
 import { deepClone, mapKeys } from "./utils";
 
 // https://code.google.com/archive/p/puz/wikis/FileFormat.wiki
@@ -41,12 +41,20 @@ export async function processPuzData(data: Blob): Promise<ScrapedPuzzle | undefi
     i *= 2; // skip over user progress
 
     numberizeGrid(puzzle.grid);
-    
+    const slotCount = countGridSlots(puzzle.grid);
+    const headerClueCount = await readPuzHeaderClueCount(data);
+
     let author = "";
     [puzzle.title, i] = getNextString(restOfFile, i);
     [author, i] = getNextString(restOfFile, i);
     [puzzle.copyright, i] = getNextString(restOfFile, i);
     puzzle.authors = [author];
+
+    // Clue strings in the file must line up 1:1 with across/down slots.
+    // If they don't, leave entries empty so the caller can fall back.
+    if (headerClueCount === undefined || headerClueCount !== slotCount || slotCount === 0) {
+        return puzzle;
+    }
 
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
@@ -170,13 +178,30 @@ async function blobToText(blob: Blob): Promise<string> {
     return await blob.text();
 }
 
+/** Little-endian clue count stored at offset 0x2E in a .puz file. */
+export async function readPuzHeaderClueCount(data: Blob): Promise<number | undefined> {
+    const magicString = await data.slice(0x02, 0x0e).text();
+    if (magicString !== "ACROSS&DOWN\0") {
+        return undefined;
+    }
+    const bytes = new Uint8Array(await data.slice(0x2e, 0x30).arrayBuffer());
+    return bytes[0] + (bytes[1] << 8);
+}
+
+export function puzCluesMatchGridSlots(puzzle: ScrapedPuzzle): boolean {
+    const slots = countGridSlots(puzzle.grid);
+    return slots > 0 && puzzle.entries.size === slots;
+}
+
 function getNextString(data: string, i: number): [string, number] {
     let ret = "";
-    while(data[i] !== "\0") {
+    while (i < data.length && data[i] !== "\0") {
         ret += data[i];
         i++;
     }
-    i++;
+    if (i < data.length) {
+        i++;
+    }
     return [ret.trim(), i];
 }
 
@@ -202,7 +227,10 @@ export function generatePuzFile(puzzle: ScrapedPuzzle): Blob {
     let curRebusNumber = 1;
     for (let row = 0; row < height; row++) {
         for (let col = 0; col < width; col++) {
-            let sq = grid[row][col];
+            let sq = grid[row]?.[col];
+            if (!sq) {
+                throw new Error(`PUZ grid is not rectangular; missing square at ${row},${col}`);
+            }
             let char = sq.isBlack ? "." : sq.content ? sq.content[0] : " ";
             insertString(bytes, char, pos);
             pos++;
@@ -261,7 +289,8 @@ export function generatePuzFile(puzzle: ScrapedPuzzle): Blob {
         for (let row = 0; row < height; row++) {
             for (let col = 0; col < width; col++) {
                 let sq = grid[row][col];
-                insertNumber(bytes, 1 + rebusNumbering.get(sq.content)!, pos, 1);
+                const rebusNumber = rebusNumbering.get(sq.content);
+                insertNumber(bytes, rebusNumber ? 1 + rebusNumber : 0, pos, 1);
                 pos++;
             }
         }
@@ -421,8 +450,8 @@ function insertNumber(bytes: Uint8Array, n: number, pos: number, size: number) {
 
 function sortEntryKeysForPuz(entryKeys: string[]): string[] {
     let sortedKeys = (deepClone(entryKeys) as string[]).sort((a, b) => {
-        let aTokens = [a.slice(0, -1), a[-1]];
-        let bTokens = [b.slice(0, -1), b[-1]];
+        let aTokens = [a.slice(0, -1), a.slice(-1)];
+        let bTokens = [b.slice(0, -1), b.slice(-1)];
         if (aTokens[0] !== bTokens[0]) return +aTokens[0] - +bTokens[0];
         return aTokens[1] < bTokens[1] ? -1 : 1;
     });

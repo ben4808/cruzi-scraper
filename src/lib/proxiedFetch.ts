@@ -52,6 +52,7 @@ async function executeFetch(
 export async function proxiedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
+  sourceId?: string,
 ): Promise<Response> {
   const requestInit: RequestInit = {
     ...init,
@@ -60,7 +61,7 @@ export async function proxiedFetch(
   const requestUrl = formatRequestUrl(input);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const dispatcher = getProxyDispatcherForNextRequest();
+    const dispatcher = getProxyDispatcherForNextRequest(sourceId);
     const response = await executeFetch(input, requestInit, dispatcher);
 
     if (!RETRYABLE_STATUS_CODES.has(response.status) || attempt === MAX_RETRIES) {

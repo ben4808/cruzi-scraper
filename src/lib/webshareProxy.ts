@@ -17,6 +17,12 @@ let proxies: WebshareProxy[] = [];
 let proxyIndex = 0;
 let configured = false;
 let proxyRoutingEnabled = false;
+/**
+ * Source ids (matching PuzzleSource.id) that should be routed through the
+ * Webshare proxy even when PUZ_LOCATION is not 'S3' (i.e. on local runs).
+ * Parsed from the WEBSHARE_PROXY_SOURCES env var, e.g. "NYT,WSJ".
+ */
+let proxiedSourceIds = new Set<string>();
 
 function parseProxyLine(line: string): WebshareProxy | null {
   const trimmed = line.trim();
@@ -156,12 +162,33 @@ function proxyToUrl(proxy: WebshareProxy): string {
   return `http://${username}:${password}@${proxy.host}:${proxy.port}`;
 }
 
-export function getProxyDispatcherForNextRequest(): ProxyAgent | undefined {
+export function getProxyDispatcherForNextRequest(sourceId?: string): ProxyAgent | undefined {
   if (!proxyRoutingEnabled || proxies.length === 0) {
     return undefined;
   }
 
+  // In S3 mode every source is proxied. In local mode only the sources listed
+  // in WEBSHARE_PROXY_SOURCES are proxied.
+  if (process.env.PUZ_LOCATION !== 'S3') {
+    if (!sourceId || !proxiedSourceIds.has(sourceId)) {
+      return undefined;
+    }
+  }
+
   return new ProxyAgent(proxyToUrl(nextProxy()));
+}
+
+function parseProxiedSourceIds(): Set<string> {
+  const raw = process.env.WEBSHARE_PROXY_SOURCES?.trim();
+  if (!raw) {
+    return new Set();
+  }
+  return new Set(
+    raw
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0),
+  );
 }
 
 export async function configureWebshareProxy(): Promise<void> {
@@ -170,9 +197,20 @@ export async function configureWebshareProxy(): Promise<void> {
   }
 
   if (process.env.PUZ_LOCATION !== 'S3') {
-    proxyRoutingEnabled = false;
+    proxiedSourceIds = parseProxiedSourceIds();
+    if (proxiedSourceIds.size === 0) {
+      proxyRoutingEnabled = false;
+      configured = true;
+      console.log('Skipping Webshare proxy routing; PUZ_LOCATION is not set to S3 and WEBSHARE_PROXY_SOURCES is empty.');
+      return;
+    }
+
+    proxies = await loadProxies();
+    proxyRoutingEnabled = true;
     configured = true;
-    console.log('Skipping Webshare proxy routing; PUZ_LOCATION is not set to S3.');
+    console.log(
+      `Configured Webshare proxy routing for local run with ${proxies.length} proxies. Proxied sources: ${Array.from(proxiedSourceIds).join(', ')}.`,
+    );
     return;
   }
 

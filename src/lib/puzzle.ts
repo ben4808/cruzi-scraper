@@ -63,3 +63,15 @@ export function numberizeGrid(grid: Square[][]) {
         }
     }
 }
+
+/** Number of across + down slots implied by the numbered grid. */
+export function countGridSlots(grid: Square[][]): number {
+    let count = 0;
+    for (const row of grid) {
+        for (const square of row) {
+            if (square.directions.includes("A")) count += 1;
+            if (square.directions.includes("D")) count += 1;
+        }
+    }
+    return count;
+}

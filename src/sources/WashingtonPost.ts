@@ -15,12 +15,15 @@ export class WashingtonPostSource implements PuzzleSource {
       let dateString = `${date.getFullYear().toString().slice(2)}${(date.getMonth()+1).toString().padStart(2, "0")}${date.getDate().toString().padStart(2, "0")}`;
       let url = `https://herbach.dnsalias.com/WaPo/wp${dateString}.puz`;
       //url = `https://herbach.dnsalias.com/WaPo/wpYYMMDD.puz`;
-      let response = await proxiedFetch(url); 
+      let response = await proxiedFetch(url);
+      if (!response.ok) {
+        return null;
+      }
       let blobResponse = await response.blob();
       let puzzle = await processPuzData(blobResponse);
 
       if (!puzzle) {
-        throw new Error("Failed to parse Universal puzzle data.");
+        throw new Error("Failed to parse Washington Post puzzle data.");
       }
 
       puzzle.lang = "en";

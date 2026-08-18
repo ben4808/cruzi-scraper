@@ -61,7 +61,7 @@ const puzzleSources = [
 
 const SCRAPE_CONCURRENCY = 3;
 
-const PUZ_FILE_SOURCE_IDS = new Set([
+export const PUZ_FILE_SOURCE_IDS = new Set([
   'BEQ',
   'BestCrosswords',
   'Croce',
@@ -71,7 +71,7 @@ const PUZ_FILE_SOURCE_IDS = new Set([
   'WashingtonPost',
   'WSJ',
 ]);
-function normalizePuzzleForPuzEncoding(puzzle: ScrapedPuzzle): void {
+export function normalizePuzzleForPuzEncoding(puzzle: ScrapedPuzzle): void {
   if (puzzle.title) {
     puzzle.title = stripNonWindows1252OrIso8859_1(puzzle.title);
   }
@@ -97,11 +97,11 @@ function normalizePuzzleForPuzEncoding(puzzle: ScrapedPuzzle): void {
   }
 }
 
-const S3_BUCKET = 'scraped-crosswords';
-const s3Client = new S3Client({});
-const LOCAL_PUZ_PATH = 'C:\\Users\\ben_z\\Desktop\\puzzles';
+export const S3_BUCKET = 'scraped-crosswords';
+export const s3Client = new S3Client({});
+export const LOCAL_PUZ_PATH = 'C:\\Users\\ben_z\\Desktop\\puzzles';
 
-function getPuzzleStorageKey(puzzle: ScrapedPuzzle): string {
+export function getPuzzleStorageKey(puzzle: ScrapedPuzzle): string {
   const publicationId = puzzle.publicationId || 'unknown';
   const date = puzzle.date;
   const year = date.getFullYear();
@@ -115,7 +115,7 @@ async function puzzleToBuffer(puzzle: ScrapedPuzzle): Promise<Buffer> {
   return Buffer.from(await blob.arrayBuffer());
 }
 
-async function uploadPuzzleToS3(puzzle: ScrapedPuzzle, key: string): Promise<void> {
+export async function uploadPuzzleToS3(puzzle: ScrapedPuzzle, key: string): Promise<void> {
   const buffer = await puzzleToBuffer(puzzle);
   await s3Client.send(new PutObjectCommand({
     Bucket: S3_BUCKET,
@@ -126,7 +126,7 @@ async function uploadPuzzleToS3(puzzle: ScrapedPuzzle, key: string): Promise<voi
   console.log(`Uploaded ${key} to s3://${S3_BUCKET}/`);
 }
 
-async function savePuzzleToLocal(puzzle: ScrapedPuzzle, key: string): Promise<void> {
+export async function savePuzzleToLocal(puzzle: ScrapedPuzzle, key: string): Promise<void> {
   const buffer = await puzzleToBuffer(puzzle);
   const localFilePath = path.join(LOCAL_PUZ_PATH, key);
   await fs.promises.mkdir(path.dirname(localFilePath), { recursive: true });
@@ -140,7 +140,7 @@ async function puzzleAlreadyExists(puzzle: ScrapedPuzzle): Promise<boolean> {
   return collectionId !== null;
 }
 
-function requirePuzLocation(): 'S3' | 'local' {
+export function requirePuzLocation(): 'S3' | 'local' {
   const puzLocation = process.env.PUZ_LOCATION;
   if (puzLocation === 'S3' || puzLocation === 'local') {
     return puzLocation;
@@ -148,7 +148,7 @@ function requirePuzLocation(): 'S3' | 'local' {
   throw new Error("PUZ_LOCATION must be set to 'S3' or 'local'; scraper will not run without it.");
 }
 
-async function savePuzzle(puzzle: ScrapedPuzzle, key: string, puzLocation: 'S3' | 'local'): Promise<void> {
+export async function savePuzzle(puzzle: ScrapedPuzzle, key: string, puzLocation: 'S3' | 'local'): Promise<void> {
   if (puzLocation === 'S3') {
     await uploadPuzzleToS3(puzzle, key);
     return;
@@ -260,7 +260,7 @@ let processPuzzle = async (puzzle: ScrapedPuzzle): Promise<void> => {
   }
 }
 
-let puzzleToClueCollection = (puzzle: ScrapedPuzzle): ClueCollection => {
+export let puzzleToClueCollection = (puzzle: ScrapedPuzzle): ClueCollection => {
   let lang = puzzle.lang || 'en';
 
   let clues: CollectionClue[] = mapValues(puzzle.entries).map((puzEntry, index) => ({
