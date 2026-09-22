@@ -57,6 +57,8 @@ export class WSJSource implements PuzzleSource {
       return herbachPuzzle;
     }
 
+    // Puzzlr may post a puzzle the day before the weekday it is marked as
+    // (e.g. Saturday's puzzle on Friday). Match on that marked day.
     return fetchWsjPuzzleFromPuzzlr(date, publicationId);
   }
 }

@@ -18,10 +18,21 @@ interface PuzzlrClue {
   answer: string;
 }
 
+const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
+
 interface PuzzlrPuzzleData {
   title?: string;
   author?: string;
   description?: string;
+  subtitle?: string;
   width: number;
   height: number;
   grid: PuzzlrCell[][];
@@ -76,6 +87,32 @@ function parsePuzzlrDate(dateString: string | undefined): Date | null {
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
+function addCalendarDays(date: Date, days: number): Date {
+  const calendarDate = toCalendarDate(date);
+  calendarDate.setDate(calendarDate.getDate() + days);
+  return calendarDate;
+}
+
+function weekdayName(date: Date): string {
+  return WEEKDAY_NAMES[toCalendarDate(date).getDay()];
+}
+
+function getPuzzlrMarkedWeekday(level: PuzzlrLevel): string | null {
+  const subtitle = level.data?.subtitle?.trim();
+  return subtitle || null;
+}
+
+function puzzlrLevelMatchesMarkedDay(level: PuzzlrLevel, targetDate: Date): boolean {
+  const targetWeekday = weekdayName(targetDate);
+  const markedWeekday = getPuzzlrMarkedWeekday(level);
+  if (markedWeekday) {
+    return markedWeekday.toLowerCase() === targetWeekday.toLowerCase();
+  }
+
+  const publishDate = parsePuzzlrDate(level.scheduledDate ?? level.date);
+  return !!publishDate && formatDateKey(publishDate) === formatDateKey(targetDate);
+}
+
 function addClueEntries(
   entries: Map<string, PuzzleEntry>,
   clues: PuzzlrClue[] | undefined,
@@ -127,14 +164,12 @@ function buildScrapedPuzzleFromPuzzlr(
   addClueEntries(puzzle.entries, puzzleData.clues?.down, 'D');
 
   const byline = puzzleData.author?.trim();
-  const publishDate = parsePuzzlrDate(level.scheduledDate ?? level.date)
-    ?? toCalendarDate(options.date);
 
   puzzle.publicationId = options.publicationId;
   puzzle.title = (puzzleData.title ?? '').trim();
   puzzle.authors = byline ? [normalizeWsjByline(byline)] : undefined;
   puzzle.copyright = puzzleData.description?.trim();
-  puzzle.date = publishDate;
+  puzzle.date = toCalendarDate(options.date);
   puzzle.sourceLink = options.sourceLink;
   puzzle.lang = 'en';
 
@@ -157,20 +192,24 @@ export async function fetchWsjPuzzleFromPuzzlr(
   date: Date,
   publicationId: PublicationId,
 ): Promise<ScrapedPuzzle | null> {
-  const targetDateKey = formatDateKey(date);
-  const level = await fetchPuzzlrLevel(date);
-  if (!level?.data) {
-    return null;
+  const targetDate = toCalendarDate(date);
+  // Puzzlr often posts a puzzle the calendar day before the weekday in `subtitle`
+  // (e.g. the Saturday 21x21 is served on Friday). Prefer the previous day, then
+  // the requested day in case they ever publish same-day.
+  const candidateDates = [addCalendarDays(targetDate, -1), targetDate];
+
+  for (const candidateDate of candidateDates) {
+    const level = await fetchPuzzlrLevel(candidateDate);
+    if (!level?.data || !puzzlrLevelMatchesMarkedDay(level, targetDate)) {
+      continue;
+    }
+
+    return buildScrapedPuzzleFromPuzzlr(level, {
+      publicationId,
+      date: targetDate,
+      sourceLink: WSJ_GAMES_URL,
+    });
   }
 
-  const publishDate = parsePuzzlrDate(level.scheduledDate ?? level.date);
-  if (!publishDate || formatDateKey(publishDate) !== targetDateKey) {
-    return null;
-  }
-
-  return buildScrapedPuzzleFromPuzzlr(level, {
-    publicationId,
-    date,
-    sourceLink: WSJ_GAMES_URL,
-  });
+  return null;
 }
