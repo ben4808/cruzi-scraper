@@ -6,6 +6,8 @@ import { processPuzData } from "../lib/puzFiles";
 import { isoDatetimeToPuzzleCalendarDate } from '../lib/utils';
 
 const CROCE_HOMEPAGE_URL = 'https://club72.wordpress.com/';
+const CROCE_POSTS_API_URL =
+  'https://public-api.wordpress.com/rest/v1.1/sites/club72.wordpress.com/posts?number=1&fields=title,URL,date,content';
 
 interface CrocePostInfo {
   postedDate: string;
@@ -14,51 +16,59 @@ interface CrocePostInfo {
   title: string;
 }
 
-function parseLatestCrocePost(html: string): CrocePostInfo | null {
+interface WordPressPost {
+  date?: string;
+  title?: string;
+  URL?: string;
+  content?: string;
+}
+
+interface WordPressPostsResponse {
+  posts?: WordPressPost[];
+}
+
+function findPuzUrl(html: string): string | null {
   const root = parse(html);
-  const article = root.querySelector('article');
-  if (!article) {
-    return null;
-  }
-
-  const titleEl = article.querySelector('.entry-title a');
-  const timeEl = article.querySelector('time.entry-date');
-  const entryContent = article.querySelector('.entry-content');
-
   let puzUrl: string | null = null;
-  if (entryContent) {
-    for (const link of entryContent.querySelectorAll('a')) {
-      const href = link.getAttribute('href');
-      const text = link.textContent?.trim().toUpperCase() ?? '';
-      if (href && text.includes('PUZ')) {
-        puzUrl = href;
-        break;
-      }
+
+  for (const link of root.querySelectorAll('a')) {
+    const href = link.getAttribute('href');
+    const text = link.textContent?.trim().toUpperCase() ?? '';
+    if (!href) {
+      continue;
+    }
+    if (text.includes('PUZ') || /\.puz(\?|$)/i.test(href)) {
+      puzUrl = href;
+      break;
     }
   }
 
-  const postedDate = timeEl?.getAttribute('datetime');
-  if (!postedDate) {
+  return puzUrl;
+}
+
+function parseLatestCrocePost(apiJson: WordPressPostsResponse): CrocePostInfo | null {
+  const post = apiJson.posts?.[0];
+  if (!post?.date || !post.content) {
     return null;
   }
 
   return {
-    postedDate,
-    puzUrl,
-    postUrl: titleEl?.getAttribute('href') ?? '',
-    title: titleEl?.textContent?.trim() ?? '',
+    postedDate: post.date,
+    puzUrl: findPuzUrl(post.content),
+    postUrl: post.URL ?? '',
+    title: post.title?.trim() ?? '',
   };
 }
 
 async function scrapeLatestCrocePost(): Promise<{ postInfo: CrocePostInfo; blob: Blob } | null> {
-  const response = await proxiedFetch(CROCE_HOMEPAGE_URL);
+  const response = await proxiedFetch(CROCE_POSTS_API_URL);
   if (!response.ok) {
-    throw new Error(`Failed to fetch Croce homepage (${response.status}).`);
+    throw new Error(`Failed to fetch Croce posts (${response.status}).`);
   }
 
-  const postInfo = parseLatestCrocePost(await response.text());
+  const postInfo = parseLatestCrocePost(await response.json() as WordPressPostsResponse);
   if (!postInfo) {
-    console.log('Croce: No featured crossword found on homepage.');
+    console.log('Croce: No featured crossword found.');
     return null;
   }
 

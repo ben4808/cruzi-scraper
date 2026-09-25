@@ -3,6 +3,7 @@
  * It is responsible for scraping crossword puzzles from the web and saving them to a storage drive.
  * It also creates a new crossword and clue collection in the database for the crossword.
  * It then enqueues all answers into the entry info queue to have its senses (definitions) populated.
+ * NYT, LAT, WSJ, and Newsday puzzles are also added to crossword_processing_queue.
  */
 
 import { generatePuzFile } from './lib/puzFiles';
@@ -14,7 +15,13 @@ import {
   ScrapedPuzzle,
 } from 'cruzi-models';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getCrosswordCollectionId, ILoaderDao, insertEntries, LoaderDao } from 'cruzi-db';
+import {
+  enqueueCrosswordProcessingPuzzle,
+  getCrosswordCollectionId,
+  ILoaderDao,
+  insertEntries,
+  LoaderDao,
+} from 'cruzi-db';
 import { normalizeScrapedPuzzleAuthors } from './lib/authorNormalization';
 import { formatDateKey, generateId, getPuzzleDate, mapValues, mapWithConcurrency } from './lib/utils';
 import { PuzzleSource, PuzzleSources } from './scraper/PuzzleSource';
@@ -60,6 +67,8 @@ const puzzleSources = [
 ] as PuzzleSource[];
 
 const SCRAPE_CONCURRENCY = 3;
+
+const CROSSWORD_PROCESSING_PUBLICATION_IDS = new Set(['NYT', 'LAT', 'WSJ', 'Newsday']);
 
 export const PUZ_FILE_SOURCE_IDS = new Set([
   'BEQ',
@@ -255,6 +264,14 @@ let processPuzzle = async (puzzle: ScrapedPuzzle): Promise<void> => {
       await dao.addCrosswordFamiliarityQueueEntries(familiarityQueueItems);
 
       console.log(`${puzzle.publicationId} entry info queued.`);
+
+      if (
+        CROSSWORD_PROCESSING_PUBLICATION_IDS.has(puzzle.publicationId || '') &&
+        puzzle.id
+      ) {
+        await enqueueCrosswordProcessingPuzzle(puzzle.id);
+        console.log(`${puzzle.publicationId} added to crossword_processing_queue.`);
+      }
   } catch (error) {
     console.error(`Error processing puzzle ${puzzle.publicationId}`, error);
   }
