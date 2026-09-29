@@ -246,7 +246,7 @@ let processPuzzle = async (puzzle: ScrapedPuzzle): Promise<void> => {
       let uniqueEntries = Array.from(new Set(entries.map(entry => entry.entry))).sort(
         (a, b) => (a === b ? 0 : a < b ? -1 : 1),
       );
-      let familiarityQueueItems = uniqueEntries.map(entry => ({
+      let entryItems = uniqueEntries.map(entry => ({
         entry,
         lang: puzzle.lang || 'en',
       }));
@@ -254,16 +254,15 @@ let processPuzzle = async (puzzle: ScrapedPuzzle): Promise<void> => {
       await dao.saveClueCollection(clueCollection); // Adds id to collection
       await dao.addCluesToCollection(clueCollection.id!, clueCollection.clues as CollectionClue[]);
       await insertEntries(
-        familiarityQueueItems.map(({ entry, lang }) => ({
+        entryItems.map(({ entry, lang }) => ({
           entry,
           lang,
           length: entry.length,
-          display_text: entry,
+          display_text: '',
         })),
       );
-      await dao.addCrosswordFamiliarityQueueEntries(familiarityQueueItems);
 
-      console.log(`${puzzle.publicationId} entry info queued.`);
+      console.log(`${puzzle.publicationId} entries inserted.`);
 
       if (
         CROSSWORD_PROCESSING_PUBLICATION_IDS.has(puzzle.publicationId || '') &&

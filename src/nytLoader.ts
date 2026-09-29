@@ -393,7 +393,7 @@ async function tagNytPuzzleEntries(puzzle: ScrapedPuzzle): Promise<string[]> {
       entry,
       lang,
       length: entry.length,
-      display_text: entry,
+      display_text: '',
     })),
   );
   await addEntryTags([
