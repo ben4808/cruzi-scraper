@@ -79,6 +79,19 @@ export function getMostRecentSunday(date: Date): Date {
   return calendarDate;
 }
 
+/** Closest Sunday to the given calendar date (Saturday maps to the following Sunday). */
+export function getNearestSunday(date: Date): Date {
+  const calendarDate = toCalendarDate(date);
+  const day = calendarDate.getDay();
+  if (day === 0) {
+    return calendarDate;
+  }
+
+  const offset = day <= 3 ? -day : 7 - day;
+  calendarDate.setDate(calendarDate.getDate() + offset);
+  return calendarDate;
+}
+
 export function getPuzzleDate(now: Date = new Date()): Date {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: PUZZLE_TIMEZONE,

@@ -3,7 +3,7 @@
  * It is responsible for scraping crossword puzzles from the web and saving them to a storage drive.
  * It also creates a new crossword and clue collection in the database for the crossword.
  * It then enqueues all answers into the entry info queue to have its senses (definitions) populated.
- * NYT, LAT, WSJ, and Newsday puzzles are also added to crossword_processing_queue.
+ * When running locally, NYT, LAT, WSJ, and Newsday puzzles are also added to crossword_processing_queue.
  */
 
 import { generatePuzFile } from './lib/puzFiles';
@@ -39,6 +39,7 @@ const puzzleSources = [
   PuzzleSources.WashingtonPost,
   PuzzleSources.USAToday,
   PuzzleSources.NewYorker,
+  PuzzleSources.NewYorkSunday,
   PuzzleSources.BEQ,
   PuzzleSources.Croce,
   PuzzleSources.Premier,
@@ -264,7 +265,9 @@ let processPuzzle = async (puzzle: ScrapedPuzzle): Promise<void> => {
 
       console.log(`${puzzle.publicationId} entries inserted.`);
 
+      const isLocal = !process.env.AWS_LAMBDA_FUNCTION_NAME;
       if (
+        isLocal &&
         CROSSWORD_PROCESSING_PUBLICATION_IDS.has(puzzle.publicationId || '') &&
         puzzle.id
       ) {

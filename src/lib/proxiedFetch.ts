@@ -1,4 +1,5 @@
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
+import { tlsClientFetch } from './tlsClientFetch';
 import { getProxyDispatcherForNextRequest } from './webshareProxy';
 
 const DEFAULT_BROWSER_HEADERS: Record<string, string> = {
@@ -54,15 +55,20 @@ export async function proxiedFetch(
   init?: RequestInit,
   sourceId?: string,
 ): Promise<Response> {
-  const requestInit: RequestInit = {
-    ...init,
-    headers: mergeHeaders(init),
-  };
+  const requestInit: RequestInit =
+    sourceId === 'NYT'
+      ? { ...init }
+      : {
+          ...init,
+          headers: mergeHeaders(init),
+        };
   const requestUrl = formatRequestUrl(input);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const dispatcher = getProxyDispatcherForNextRequest(sourceId);
-    const response = await executeFetch(input, requestInit, dispatcher);
+    const response =
+      sourceId === 'NYT'
+        ? await tlsClientFetch(requestUrl, requestInit, sourceId)
+        : await executeFetch(input, requestInit, getProxyDispatcherForNextRequest(sourceId));
 
     if (!RETRYABLE_STATUS_CODES.has(response.status) || attempt === MAX_RETRIES) {
       return response;

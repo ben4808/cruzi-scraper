@@ -345,6 +345,7 @@ export class NYTSource implements PuzzleSource {
         options?: { useCluePanelEntries?: boolean },
     ): Promise<ScrapedPuzzle | null> {
         let url = `https://www.xwordinfo.com/Crossword?date=${date.getMonth()+1}/${date.getDate()}/${date.getFullYear()}`;
+        // Fetched via node-tls-client (Chrome TLS fingerprint) in proxiedFetch.
         //url = `https://www.xwordinfo.com/Crossword?date=05/31/2026`;
 
         let parsedHtml: HTMLElement | undefined;

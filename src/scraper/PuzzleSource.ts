@@ -8,6 +8,7 @@ import { WashingtonPostSource } from '../sources/WashingtonPost';
 import { UniversalSundaySource } from '../sources/UniversalSunday';
 import { USATodaySource } from '../sources/USAToday';
 import { NewYorkerSource } from '../sources/NewYorker';
+import { NewYorkSundaySource } from '../sources/NewYorkSunday';
 import { BEQSource } from '../sources/BEQ';
 import { CroceSource } from '../sources/Croce';
 import { DailyCommuterSource } from '../sources/DailyCommuter';
@@ -49,6 +50,7 @@ export const PuzzleSources = {
   UniversalSunday: new UniversalSundaySource(),
   USAToday: new USATodaySource(),
   NewYorker: new NewYorkerSource(),
+  NewYorkSunday: new NewYorkSundaySource(),
   WashingtonPost: new WashingtonPostSource(),
   Joseph: new JosephSource(),
   Sheffer: new ShefferSource(),

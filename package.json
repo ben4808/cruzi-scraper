@@ -22,6 +22,7 @@
     "dotenv": "^17.4.2",
     "html-entities": "^2.6.0",
     "node-html-parser": "^9.0.0",
+    "node-tls-client": "^2.1.0",
     "undici": "^8.8.0"
   },
   "devDependencies": {

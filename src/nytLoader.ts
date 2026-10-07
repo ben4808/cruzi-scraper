@@ -24,8 +24,8 @@ Create any entries in the entry table as needed. Don't insert into the familiari
 
 Upon examining each .puz file, verify that the number of clues matches the number of slots in the
 puzzle grid. If not (or if the file cannot be parsed), ignore the .puz file and load the puzzle from
-xwordinfo via sources/NYT.ts. That web request goes through the Webshare proxy, the same way
-historicalScraper.ts does. Do not re-save a .puz file.
+xwordinfo via sources/NYT.ts using node-tls-client through the Webshare proxy.
+Do not re-save a .puz file.
 When falling back to xwordinfo, delete any existing puzzle and clue collection for that date and
 re-create them from the xwordinfo data. Do not delete entry records.
 Clues and answers come from the clue/answer section of the xwordinfo page, not from matching
@@ -430,26 +430,11 @@ async function processNytPuzzle(puzzle: ScrapedPuzzle): Promise<void> {
   );
 }
 
-/** Local runs only proxy sources listed in WEBSHARE_PROXY_SOURCES; NYT web fallback must be included. */
-function ensureNytIsProxied(): void {
-  const raw = process.env.WEBSHARE_PROXY_SOURCES?.trim() ?? '';
-  const ids = new Set(
-    raw
-      .split(',')
-      .map((id) => id.trim())
-      .filter((id) => id.length > 0),
-  );
-  ids.add('NYT');
-  process.env.WEBSHARE_PROXY_SOURCES = Array.from(ids).join(',');
-}
-
 export const loadNytPuzzles = async (fromDate: Date): Promise<void> => {
-  ensureNytIsProxied();
-  await configureWebshareProxy();
-
   const from = toCalendarDate(fromDate);
   const fromKey = formatDateKey(from);
   console.log(`Starting NYT archive loader (on or after ${fromKey})...`);
+  await configureWebshareProxy();
   const files = collectAllNytPuzFiles().filter(
     (file) => formatDateKey(file.date) >= fromKey,
   );

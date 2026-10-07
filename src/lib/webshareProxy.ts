@@ -20,7 +20,8 @@ let proxyRoutingEnabled = false;
 /**
  * Source ids (matching PuzzleSource.id) that should be routed through the
  * Webshare proxy even when PUZ_LOCATION is not 'S3' (i.e. on local runs).
- * Parsed from the WEBSHARE_PROXY_SOURCES env var, e.g. "NYT,WSJ".
+ * Parsed from the WEBSHARE_PROXY_SOURCES env var, e.g. "WSJ".
+ * NYT is always proxied.
  */
 let proxiedSourceIds = new Set<string>();
 
@@ -162,20 +163,36 @@ function proxyToUrl(proxy: WebshareProxy): string {
   return `http://${username}:${password}@${proxy.host}:${proxy.port}`;
 }
 
-export function getProxyDispatcherForNextRequest(sourceId?: string): ProxyAgent | undefined {
+function shouldProxySource(sourceId?: string): boolean {
   if (!proxyRoutingEnabled || proxies.length === 0) {
-    return undefined;
+    return false;
   }
 
-  // In S3 mode every source is proxied. In local mode only the sources listed
-  // in WEBSHARE_PROXY_SOURCES are proxied.
+  // In S3 mode every source is proxied. In local mode NYT is always proxied,
+  // plus any sources listed in WEBSHARE_PROXY_SOURCES.
   if (process.env.PUZ_LOCATION !== 'S3') {
+    if (sourceId === 'NYT') {
+      return true;
+    }
     if (!sourceId || !proxiedSourceIds.has(sourceId)) {
-      return undefined;
+      return false;
     }
   }
 
-  return new ProxyAgent(proxyToUrl(nextProxy()));
+  return true;
+}
+
+export function getProxyUrlForNextRequest(sourceId?: string): string | undefined {
+  if (!shouldProxySource(sourceId)) {
+    return undefined;
+  }
+
+  return proxyToUrl(nextProxy());
+}
+
+export function getProxyDispatcherForNextRequest(sourceId?: string): ProxyAgent | undefined {
+  const proxyUrl = getProxyUrlForNextRequest(sourceId);
+  return proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
 }
 
 function parseProxiedSourceIds(): Set<string> {
@@ -183,12 +200,13 @@ function parseProxiedSourceIds(): Set<string> {
   if (!raw) {
     return new Set();
   }
-  return new Set(
+  const ids = new Set(
     raw
       .split(',')
       .map((id) => id.trim())
       .filter((id) => id.length > 0),
   );
+  return ids;
 }
 
 export async function configureWebshareProxy(): Promise<void> {
@@ -198,12 +216,7 @@ export async function configureWebshareProxy(): Promise<void> {
 
   if (process.env.PUZ_LOCATION !== 'S3') {
     proxiedSourceIds = parseProxiedSourceIds();
-    if (proxiedSourceIds.size === 0) {
-      proxyRoutingEnabled = false;
-      configured = true;
-      console.log('Skipping Webshare proxy routing; PUZ_LOCATION is not set to S3 and WEBSHARE_PROXY_SOURCES is empty.');
-      return;
-    }
+    proxiedSourceIds.add('NYT');
 
     proxies = await loadProxies();
     proxyRoutingEnabled = true;
