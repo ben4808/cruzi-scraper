@@ -192,6 +192,10 @@ function buildPuzzmoBigSourceLink(date: Date): string {
   return `https://www.puzzmo.com/puzzle/${formatDateKey(date)}/crossword/big`;
 }
 
+export function isPuzzmoBigPublishDate(date: Date): boolean {
+  return formatDateKey(getMostRecentPuzzmoBigDate(toCalendarDate(date))) === formatDateKey(date);
+}
+
 export async function fetchPuzzmoBigPuzzle(
   _date: Date,
   options: {
@@ -213,4 +217,4 @@ export async function fetchPuzzmoBigPuzzle(
   });
 }
 
-export { getPuzzmoDate };
+export { getPuzzmoDate, getMostRecentPuzzmoBigDate };

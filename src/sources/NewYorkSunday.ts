@@ -100,6 +100,8 @@ async function fetchNewYorkSundayPuzzle(
 export class NewYorkSundaySource implements PuzzleSource {
   public id = 'NewYorkSunday';
   public name = 'New York Magazine';
+  public publishDays = [0];
+  public fetchMode = 'latest' as const;
 
   public getPuzzle(date: Date) {
     return fetchNewYorkSundayPuzzle(date, this.id as PublicationId);

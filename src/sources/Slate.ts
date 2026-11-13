@@ -24,10 +24,27 @@ interface CrossharePuzzle {
   clues: CrosshareClue[];
 }
 
+// Slate slugs follow AP month abbreviations: March–July stay spelled out.
+const SLATE_MONTH_SLUGS = [
+  'jan',
+  'feb',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'aug',
+  'sept',
+  'oct',
+  'nov',
+  'dec',
+];
+
 function buildSlateArticleUrl(date: Date): string {
   const year = date.getFullYear();
-  const monthPadded = String(date.getMonth() + 1).padStart(2, '0');
-  const month = date.toLocaleDateString('en-US', { month: 'long' }).toLowerCase();
+  const monthIndex = date.getMonth();
+  const monthPadded = String(monthIndex + 1).padStart(2, '0');
+  const month = SLATE_MONTH_SLUGS[monthIndex];
   const day = date.getDate();
   return `https://slate.com/life/${year}/${monthPadded}/crossword-slate-daily-puzzle-${month}-${day}-${year}.html`;
 }

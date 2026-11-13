@@ -14,6 +14,7 @@ function buildPuzzleUrl(date: Date): string {
 export class PennyDellSundaySource implements PuzzleSource {
   public id = 'PennyDellSunday';
   public name = 'Penny Dell Sunday';
+  public publishDays = [0];
 
   public async getPuzzle(date: Date) {
     if (date.getDay() !== 0) {

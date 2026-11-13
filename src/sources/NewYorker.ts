@@ -140,6 +140,7 @@ async function fetchNewYorkerPuzzle(
 export class NewYorkerSource implements PuzzleSource {
   public id = 'NewYorker';
   public name = 'New Yorker';
+  public publishDays = [1, 2, 3, 4, 5];
 
   public getPuzzle(date: Date) {
     return fetchNewYorkerPuzzle(date, this.id as PublicationId);

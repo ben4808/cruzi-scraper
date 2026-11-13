@@ -42,6 +42,19 @@ export function toCalendarDate(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+export function addCalendarDays(date: Date, days: number): Date {
+  const calendarDate = toCalendarDate(date);
+  calendarDate.setDate(calendarDate.getDate() + days);
+  return calendarDate;
+}
+
+/** Same-week occurrence of `weekday` (0=Sun..6=Sat) as `date`, using Sunday-start weeks. */
+export function calendarDateOnWeekday(date: Date, weekday: number): Date {
+  const calendarDate = toCalendarDate(date);
+  calendarDate.setDate(calendarDate.getDate() + (weekday - calendarDate.getDay()));
+  return calendarDate;
+}
+
 /** Calendar date in the puzzle timezone (America/New_York) as local midnight. */
 export function toPuzzleTimezoneCalendarDate(instant: Date): Date {
   const parts = new Intl.DateTimeFormat('en-US', {

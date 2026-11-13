@@ -43,6 +43,7 @@ async function fetchHerbachPuzzle(date: Date, publicationId: PublicationId): Pro
 export class WSJSource implements PuzzleSource {
   public id = 'WSJ';
   public name = 'Wall Street Journal';
+  public publishDays = [1, 2, 3, 4, 6];
 
   public async getPuzzle(date: Date): Promise<ScrapedPuzzle | null> {
     // Return null if the date is a Friday or Sunday. WSJ doesn't include solutions for Friday contest puzzles.

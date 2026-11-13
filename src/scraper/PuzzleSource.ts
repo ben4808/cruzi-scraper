@@ -35,10 +35,39 @@ import { YourPuzzleSource } from '../sources/YourPuzzleSource';
 import { MerriamWebsterSource } from '../sources/MerriamWebster';
 import { SporcleSource } from '../sources/Sporcle';
 
+export type PuzzleFetchMode = 'byDate' | 'latest';
+
+export const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6] as const;
+
 export interface PuzzleSource {
   id: string;
   name: string;
   getPuzzle: (date: Date) => Promise<ScrapedPuzzle | null>;
+  /**
+   * Days this source typically publishes, 0=Sunday .. 6=Saturday.
+   * Defaults to every day. Ignored when `isPublishDate` is set.
+   */
+  publishDays?: readonly number[];
+  /**
+   * `byDate`: getPuzzle(date) fetches that publication date (can backfill).
+   * `latest`: getPuzzle returns the current puzzle; call once per run.
+   * Defaults to `byDate`.
+   */
+  fetchMode?: PuzzleFetchMode;
+  /** If set, takes precedence over `publishDays`. */
+  isPublishDate?: (date: Date) => boolean;
+}
+
+export function sourcePublishesOn(source: PuzzleSource, date: Date): boolean {
+  if (source.isPublishDate) {
+    return source.isPublishDate(date);
+  }
+  const days = source.publishDays ?? ALL_WEEKDAYS;
+  return days.includes(date.getDay());
+}
+
+export function sourceFetchMode(source: PuzzleSource): PuzzleFetchMode {
+  return source.fetchMode ?? 'byDate';
 }
 
 export const PuzzleSources = {

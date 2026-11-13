@@ -6,9 +6,9 @@ import { nytLoader } from './nytLoader';
 import { nytLoaderDb } from './nytLoader_db';
 import { cruziLoaderFromProd } from './cruziLoaderFromProd';
 
-// crosswordScraper()
-//   .then(() => console.log('Crossword loading tasks completed successfully.'))
-//   .catch((error) => console.error('Error in crossword loading tasks: ', error));
+crosswordScraper()
+  .then(() => console.log('Crossword loading tasks completed successfully.'))
+  .catch((error) => console.error('Error in crossword loading tasks: ', error));
 
 // historicalScraper(2020, 2)
 //   .then(() => console.log('Historical scraping tasks completed successfully.'))

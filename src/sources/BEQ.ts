@@ -84,6 +84,8 @@ async function scrapeLatestBeqPost(): Promise<{ postInfo: BeqPostInfo; blob: Blo
 export class BEQSource implements PuzzleSource {
     public id = "BEQ";
     public name = "Brendan Emmett Quigley";
+    public publishDays = [1, 4];
+    public fetchMode = 'latest' as const;
 
     public async getPuzzle(_date: Date): Promise<ScrapedPuzzle | null> {
       const result = await scrapeLatestBeqPost();

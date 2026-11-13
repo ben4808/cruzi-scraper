@@ -117,8 +117,13 @@ function buildEntries(clues: TribuneClue[]): Map<string, PuzzleEntry> {
 export class DailyCommuterSource implements PuzzleSource {
   public id = 'DailyCommuter';
   public name = 'Daily Commuter';
+  public publishDays = [1, 2, 3, 4, 5, 6];
 
   public async getPuzzle(date: Date): Promise<ScrapedPuzzle | null> {
+    if (date.getDay() === 0) {
+      return null;
+    }
+
     const url = buildPuzzleUrl(date);
     const response = await proxiedFetch(url, {
       headers: { Accept: 'application/json' },

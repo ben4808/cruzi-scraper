@@ -6,6 +6,7 @@ import { processPuzData } from "../lib/puzFiles";
 export class UniversalSundaySource implements PuzzleSource {
     public id = "UniversalSunday";
     public name = "Universal Sunday";
+    public publishDays = [0];
 
     public async getPuzzle(date: Date): Promise<ScrapedPuzzle | null> {
       // Return null unless it's a Sunday.

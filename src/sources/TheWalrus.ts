@@ -1,19 +1,16 @@
 import { PublicationId } from 'cruzi-models';
 import { fetchAmuseLabsLatestFromPicker } from '../lib/amuseLabs';
-import { formatDateKey, getPuzzleDate } from '../lib/utils';
+import { calendarDateOnWeekday } from '../lib/utils';
 import { PuzzleSource } from '../scraper/PuzzleSource';
 
 export class TheWalrusSource implements PuzzleSource {
   public id = 'TheWalrus';
   public name = 'The Walrus';
+  public publishDays = [5];
+  public fetchMode = 'latest' as const;
 
   public async getPuzzle(date: Date) {
-    const today = getPuzzleDate();
-    if (formatDateKey(date) !== formatDateKey(today)) {
-      return null;
-    }
-
-    return fetchAmuseLabsLatestFromPicker(
+    const puzzle = await fetchAmuseLabsLatestFromPicker(
       {
         pickerUrl: 'https://cdn2.amuselabs.com/pmm/date-picker?set=walrus-weekly-crossword',
         urlFromId: 'https://cdn2.amuselabs.com/pmm/crossword?id={puzzle_id}&set=walrus-weekly-crossword',
@@ -25,5 +22,8 @@ export class TheWalrusSource implements PuzzleSource {
         sourceLink: 'https://thewalrus.ca/weekly-crossword/',
       },
     );
+
+    puzzle.date = calendarDateOnWeekday(puzzle.date, 5);
+    return puzzle;
   }
 }

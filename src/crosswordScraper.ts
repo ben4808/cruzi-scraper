@@ -21,10 +21,11 @@ import {
   ILoaderDao,
   insertEntries,
   LoaderDao,
+  sqlQuery,
 } from 'cruzi-db';
 import { normalizeScrapedPuzzleAuthors } from './lib/authorNormalization';
-import { formatDateKey, generateId, getPuzzleDate, mapValues, mapWithConcurrency } from './lib/utils';
-import { PuzzleSource, PuzzleSources } from './scraper/PuzzleSource';
+import { addCalendarDays, formatDateKey, generateId, getPuzzleDate, mapValues, mapWithConcurrency } from './lib/utils';
+import { PuzzleSource, PuzzleSources, sourceFetchMode, sourcePublishesOn } from './scraper/PuzzleSource';
 import { configureWebshareProxy } from './lib/webshareProxy';
 import fs from 'fs';
 import path from 'path';
@@ -68,6 +69,8 @@ const puzzleSources = [
 ] as PuzzleSource[];
 
 const SCRAPE_CONCURRENCY = 3;
+/** Today plus the previous 6 days. */
+export const MISSING_PUZZLE_LOOKBACK_DAYS = 7;
 
 const CROSSWORD_PROCESSING_PUBLICATION_IDS = new Set(['NYT', 'LAT', 'WSJ', 'Newsday']);
 
@@ -167,44 +170,157 @@ export async function savePuzzle(puzzle: ScrapedPuzzle, key: string, puzLocation
   await savePuzzleToLocal(puzzle, key);
 }
 
+async function loadExistingPuzzleDates(
+  startDate: string,
+  endDate: string,
+): Promise<{ publicationId: string; date: string }[]> {
+  const rows = await sqlQuery(
+    false,
+    `SELECT publication_id, to_char(date, 'YYYY-MM-DD') AS date
+     FROM puzzle
+     WHERE date >= $1
+       AND date <= $2
+       AND publication_id IS NOT NULL`,
+    [
+      { name: 'p_start_date', value: startDate },
+      { name: 'p_end_date', value: endDate },
+    ],
+  );
+
+  return rows.map((row) => ({
+    publicationId: row.publication_id as string,
+    date: row.date as string,
+  }));
+}
+
+function lookbackDates(today: Date): Date[] {
+  const dates: Date[] = [];
+  for (let daysAgo = MISSING_PUZZLE_LOOKBACK_DAYS - 1; daysAgo >= 0; daysAgo -= 1) {
+    dates.push(addCalendarDays(today, -daysAgo));
+  }
+  return dates;
+}
+
+function existingDateKeysByPublication(
+  rows: { publicationId: string; date: string }[],
+): Map<string, Set<string>> {
+  const byPublication = new Map<string, Set<string>>();
+  for (const row of rows) {
+    let dates = byPublication.get(row.publicationId);
+    if (!dates) {
+      dates = new Set<string>();
+      byPublication.set(row.publicationId, dates);
+    }
+    dates.add(row.date);
+  }
+  return byPublication;
+}
+
+export function datesToScrape(
+  source: PuzzleSource,
+  today: Date,
+  existingDates: Set<string>,
+): Date[] {
+  const candidates = lookbackDates(today);
+  const missingExpected = candidates.filter((date) => {
+    if (!sourcePublishesOn(source, date)) {
+      return false;
+    }
+    return !existingDates.has(formatDateKey(date));
+  });
+
+  if (sourceFetchMode(source) === 'latest') {
+    return missingExpected.length > 0 ? [today] : [];
+  }
+
+  return missingExpected.sort((a, b) => b.getTime() - a.getTime());
+}
+
+async function scrapeSourceDate(
+  source: PuzzleSource,
+  date: Date,
+  puzLocation: 'S3' | 'local',
+): Promise<ScrapedPuzzle | undefined> {
+  const dateString = formatDateKey(date);
+  try {
+    const puzzle = await source.getPuzzle(date);
+    if (!puzzle) {
+      console.log(`No puzzle found for ${source.name} on ${dateString}`);
+      return undefined;
+    }
+    normalizeScrapedPuzzleAuthors(puzzle);
+    if (!PUZ_FILE_SOURCE_IDS.has(source.id)) {
+      normalizePuzzleForPuzEncoding(puzzle);
+    }
+    if (await puzzleAlreadyExists(puzzle)) {
+      console.log(`Puzzle already exists for ${source.name} on ${formatDateKey(puzzle.date)}, skipping.`);
+      return undefined;
+    }
+
+    const key = getPuzzleStorageKey(puzzle);
+    await savePuzzle(puzzle, key, puzLocation);
+
+    const puzzleDateString = formatDateKey(puzzle.date);
+    if (puzzleDateString !== dateString) {
+      console.log(
+        `Scraped puzzle from ${source.name} for ${dateString} (publication date ${puzzleDateString})`,
+      );
+    } else {
+      console.log(`Scraped puzzle from ${source.name} for date ${dateString}`);
+    }
+    return puzzle;
+  } catch (error) {
+    console.error(`Error scraping puzzle from ${source.name} for date ${dateString}: `, error);
+    return undefined;
+  }
+}
+
 export const scrapePuzzles = async (puzLocation: 'S3' | 'local'): Promise<ScrapedPuzzle[]> => {
   await configureWebshareProxy();
 
-  const date = getPuzzleDate();
-  const dateString = formatDateKey(date);
+  const today = getPuzzleDate();
+  const rangeStart = addCalendarDays(today, -(MISSING_PUZZLE_LOOKBACK_DAYS - 1));
+  const existingRows = await loadExistingPuzzleDates(
+    formatDateKey(rangeStart),
+    formatDateKey(today),
+  );
+  const existingByPublication = existingDateKeysByPublication(existingRows);
 
   const results = await mapWithConcurrency(
     puzzleSources,
     SCRAPE_CONCURRENCY,
-    async (source): Promise<ScrapedPuzzle | undefined> => {
-      try {
-        const puzzle = await source.getPuzzle(date);
-        if (!puzzle) {
-          console.log(`No puzzle found for ${source.name} on ${dateString}`);
-          return undefined;
-        }
-        normalizeScrapedPuzzleAuthors(puzzle);
-        if (!PUZ_FILE_SOURCE_IDS.has(source.id)) {
-          normalizePuzzleForPuzEncoding(puzzle);
-        }
-        if (await puzzleAlreadyExists(puzzle)) {
-          console.log(`Puzzle already exists for ${source.name} on ${formatDateKey(puzzle.date)}, skipping.`);
-          return undefined;
-        }
-
-        const key = getPuzzleStorageKey(puzzle);
-        await savePuzzle(puzzle, key, puzLocation);
-
-        console.log(`Scraped puzzle from ${source.name} for date ${dateString}`);
-        return puzzle;
-      } catch (error) {
-        console.error(`Error scraping puzzle from ${source.name} for date ${dateString}: `, error);
-        return undefined;
+    async (source): Promise<ScrapedPuzzle[]> => {
+      const existingDates = existingByPublication.get(source.id) ?? new Set<string>();
+      const dates = datesToScrape(source, today, existingDates);
+      if (dates.length === 0) {
+        return [];
       }
+
+      if (sourceFetchMode(source) === 'latest') {
+        const missing = lookbackDates(today)
+          .filter((date) => sourcePublishesOn(source, date) && !existingDates.has(formatDateKey(date)))
+          .map(formatDateKey);
+        console.log(
+          `${source.name} is latest-only; fetching current puzzle to cover missing ${missing.join(', ')}.`,
+        );
+      } else if (dates.length > 1 || formatDateKey(dates[0]) !== formatDateKey(today)) {
+        console.log(
+          `Fetching ${source.name} for ${dates.map(formatDateKey).join(', ')}.`,
+        );
+      }
+
+      const scraped: ScrapedPuzzle[] = [];
+      for (const date of dates) {
+        const puzzle = await scrapeSourceDate(source, date, puzLocation);
+        if (puzzle) {
+          scraped.push(puzzle);
+        }
+      }
+      return scraped;
     },
   );
 
-  return results.filter((puzzle): puzzle is ScrapedPuzzle => puzzle !== undefined);
+  return results.flat();
 }
 
 // Postgres runs on the same host as this Lambda (not RDS), so no VPC configuration is required.
@@ -223,7 +339,7 @@ let runCrosswordLoadingTasks = async () => {
     //
     // It is OK if the Lambda hits its 15-minute timeout before finishing every
     // source. The next scheduled run (2 AM / 2 PM Eastern) will skip puzzles
-    // already in the database and pick up anything we missed.
+    // already in the database and retry missing publication days from the last week.
     for (const puzzle of scrapedPuzzles) {
       await processPuzzle(puzzle);
     }

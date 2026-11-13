@@ -5,6 +5,7 @@ import { PuzzleSource } from '../scraper/PuzzleSource';
 export class JosephSource implements PuzzleSource {
   public id = 'Joseph';
   public name = 'Joseph';
+  public publishDays = [1, 2, 3, 4, 5, 6];
 
   public async getPuzzle(date: Date): Promise<ScrapedPuzzle | null> {
     if (date.getDay() === 0) {

@@ -14,6 +14,7 @@ const WEEKEND_CROSSWORD_URL = 'https://app.amuselabs.com/app/crossword?id={puzzl
 export class YourPuzzleSource implements PuzzleSource {
   public id = 'YourPuzzleSource';
   public name = 'Your Puzzle Source';
+  public publishDays = [1, 2, 3, 4, 5, 6];
 
   public getPuzzle(date: Date) {
     const day = date.getDay();

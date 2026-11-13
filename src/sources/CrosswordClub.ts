@@ -20,12 +20,15 @@ async function fetchCrosswordClubPuzzle(
     publicationId: PublicationId;
     sourceLink: string;
   },
-): Promise<ScrapedPuzzle> {
+): Promise<ScrapedPuzzle | null> {
   const pageUrl = buildCrosswordClubSourceLink(date);
 
   const response = await proxiedFetch(pageUrl, {
     headers: { 'User-Agent': USER_AGENT },
   });
+  if (response.status === 404) {
+    return null;
+  }
   if (!response.ok) {
     throw new Error(`Unable to load ${pageUrl}`);
   }

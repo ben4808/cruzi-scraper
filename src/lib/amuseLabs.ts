@@ -3,6 +3,7 @@ import { parse } from 'node-html-parser';
 import { PublicationId, PuzzleEntry, ScrapedPuzzle, Square } from 'cruzi-models';
 import { deobfuscateRawc } from './amuseLabsRawc';
 import { formatDateKey, epochMsToPuzzleCalendarDate, stripAccents, toCalendarDate } from './utils';
+import { parseLooseDate } from './xdFormat';
 
 const USER_AGENT = 'cruzi-aws-crossword-scraper';
 
@@ -136,6 +137,42 @@ function selectPuzzleIdFromPickerByDate(pickerHtml: string, date: Date): string 
     }
 
     if (publicationTimeToDateKey(details.publicationTime) === targetDateKey) {
+      return details.puzzleId;
+    }
+  }
+
+  return null;
+}
+
+function officialDateKeyFromPickerDetails(details: {
+  title?: string;
+  publicationTime?: number;
+}): string | null {
+  if (details.title) {
+    const parsed = parseLooseDate(details.title.replace(/\./g, ''));
+    if (parsed) {
+      return formatDateKey(toCalendarDate(parsed));
+    }
+  }
+
+  if (details.publicationTime) {
+    return publicationTimeToDateKey(details.publicationTime);
+  }
+
+  return null;
+}
+
+function selectPuzzleIdFromPickerByOfficialDate(pickerHtml: string, date: Date): string | null {
+  const targetDateKey = formatDateKey(date);
+  const puzzles = parsePickerParams(pickerHtml).streakInfo ?? [];
+
+  for (const puzzle of puzzles) {
+    const details = puzzle.puzzleDetails;
+    if (!details?.puzzleId) {
+      continue;
+    }
+
+    if (officialDateKeyFromPickerDetails(details) === targetDateKey) {
       return details.puzzleId;
     }
   }
@@ -553,4 +590,16 @@ export async function fetchAmuseLabsFromPickerByPickerTitleDate(
   },
 ): Promise<ScrapedPuzzle | null> {
   return fetchAmuseLabsFromPicker(config, date, selectPuzzleIdFromPickerByPickerTitleDate, options);
+}
+
+export async function fetchAmuseLabsFromPickerByOfficialDate(
+  config: AmuseLabsOutletConfig,
+  date: Date,
+  options: {
+    publicationId: PublicationId;
+    sourceLink: string;
+    titleOverride?: string;
+  },
+): Promise<ScrapedPuzzle | null> {
+  return fetchAmuseLabsFromPicker(config, date, selectPuzzleIdFromPickerByOfficialDate, options);
 }

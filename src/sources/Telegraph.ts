@@ -88,33 +88,6 @@ function parseTelegraphDate(copy: TelegraphCopy): Date {
   throw new Error('Cannot parse Telegraph puzzle date.');
 }
 
-function findLatestSlug(calendar: Record<string, Record<string, string | null>>): string | null {
-  let latestSlug: string | null = null;
-  let latestTime = 0;
-
-  for (const monthKey of Object.keys(calendar).sort()) {
-    const [year, month] = monthKey.split('-').map(Number);
-    const monthCalendar = calendar[monthKey];
-    if (!monthCalendar) {
-      continue;
-    }
-
-    for (const [dayKey, slug] of Object.entries(monthCalendar)) {
-      if (!slug) {
-        continue;
-      }
-
-      const puzzleTime = new Date(year, month - 1, Number(dayKey)).getTime();
-      if (puzzleTime > latestTime) {
-        latestTime = puzzleTime;
-        latestSlug = slug;
-      }
-    }
-  }
-
-  return latestSlug;
-}
-
 function findSlugForDate(
   calendar: Record<string, Record<string, string | null>>,
   date: Date,
@@ -276,7 +249,7 @@ async function fetchTelegraphPuzzle(
     throw new Error(`Telegraph calendar missing variant ${VARIANT_SLUG}.`);
   }
 
-  const slug = findSlugForDate(calendar, date) ?? findLatestSlug(calendar);
+  const slug = findSlugForDate(calendar, date);
   if (!slug) {
     return null;
   }
@@ -290,7 +263,7 @@ async function fetchTelegraphPuzzle(
 
   if (formatDateKey(puzzle.date) !== formatDateKey(date)) {
     console.log(
-      `Telegraph Cross Atlantic puzzle for ${formatDateKey(date)} not in calendar; using ${formatDateKey(puzzle.date)} (${slug}).`,
+      `Telegraph Cross Atlantic calendar date ${formatDateKey(date)} maps to publication date ${formatDateKey(puzzle.date)} (${slug}).`,
     );
   }
 

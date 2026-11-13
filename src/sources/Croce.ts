@@ -95,6 +95,8 @@ async function scrapeLatestCrocePost(): Promise<{ postInfo: CrocePostInfo; blob:
 export class CroceSource implements PuzzleSource {
     public id = "Croce";
     public name = "Club 72 (Croce)";
+    public publishDays = [2, 5];
+    public fetchMode = 'latest' as const;
 
     public async getPuzzle(_date: Date): Promise<ScrapedPuzzle | null> {
       const result = await scrapeLatestCrocePost();
