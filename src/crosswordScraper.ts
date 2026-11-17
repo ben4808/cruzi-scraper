@@ -3,7 +3,8 @@
  * It is responsible for scraping crossword puzzles from the web and saving them to a storage drive.
  * It also creates a new crossword and clue collection in the database for the crossword.
  * It then enqueues all answers into the entry info queue to have its senses (definitions) populated.
- * When running locally, NYT, LAT, WSJ, and Newsday puzzles are also added to crossword_processing_queue.
+ * After every puzzle for the run has been saved, today's NYT puzzle is sent through the crossword
+ * processor directly. Nothing is inserted into crossword_processing_queue.
  */
 
 import { generatePuzFile } from './lib/puzFiles';
@@ -15,8 +16,9 @@ import {
   ScrapedPuzzle,
 } from 'cruzi-models';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { processCrosswordPuzzle } from 'cruzi-aws/dist/crosswordProcessor.js';
+import { MuseAiProvider } from 'cruzi-aws/dist/ai/muse.js';
 import {
-  enqueueCrosswordProcessingPuzzle,
   getCrosswordCollectionId,
   ILoaderDao,
   insertEntries,
@@ -72,7 +74,8 @@ const SCRAPE_CONCURRENCY = 3;
 /** Today plus the previous 6 days. */
 export const MISSING_PUZZLE_LOOKBACK_DAYS = 7;
 
-const CROSSWORD_PROCESSING_PUBLICATION_IDS = new Set(['NYT', 'LAT', 'WSJ', 'Newsday']);
+const NYT_PROCESSOR_PARALLEL_REQUESTS = 10;
+const nytProcessorProvider = new MuseAiProvider('muse-ember', 'xhigh');
 
 export const PUZ_FILE_SOURCE_IDS = new Set([
   'BEQ',
@@ -344,6 +347,8 @@ let runCrosswordLoadingTasks = async () => {
       await processPuzzle(puzzle);
     }
 
+    await processTodaysNytPuzzle();
+
   } catch (error) {
     console.error("Error in crossword loading tasks: ", error);
     throw error;
@@ -380,19 +385,42 @@ let processPuzzle = async (puzzle: ScrapedPuzzle): Promise<void> => {
       );
 
       console.log(`${puzzle.publicationId} entries inserted.`);
-
-      const isLocal = !process.env.AWS_LAMBDA_FUNCTION_NAME;
-      if (
-        isLocal &&
-        CROSSWORD_PROCESSING_PUBLICATION_IDS.has(puzzle.publicationId || '') &&
-        puzzle.id
-      ) {
-        await enqueueCrosswordProcessingPuzzle(puzzle.id);
-        console.log(`${puzzle.publicationId} added to crossword_processing_queue.`);
-      }
   } catch (error) {
     console.error(`Error processing puzzle ${puzzle.publicationId}`, error);
   }
+}
+
+async function processTodaysNytPuzzle(): Promise<void> {
+  const today = getPuzzleDate();
+  const dateKey = formatDateKey(today);
+  const rows = await sqlQuery(
+    false,
+    `SELECT id
+     FROM puzzle
+     WHERE publication_id = 'NYT'
+       AND to_char(date, 'YYYY-MM-DD') = $1
+     LIMIT 1`,
+    [{ name: 'p_date', value: dateKey }],
+  );
+  const puzzleId = typeof rows[0]?.id === 'string' ? rows[0].id : '';
+  if (!puzzleId) {
+    console.log(`No NYT puzzle for ${dateKey}; skipping crossword processor.`);
+    return;
+  }
+
+  console.log(`Running crossword processor for NYT ${dateKey} (${puzzleId}) with Muse Ember xhigh`);
+  const needsRetry = await processCrosswordPuzzle(
+    puzzleId,
+    nytProcessorProvider,
+    NYT_PROCESSOR_PARALLEL_REQUESTS,
+  );
+  if (needsRetry) {
+    console.warn(
+      `NYT puzzle ${puzzleId} did not finish processing; the next scraper run will continue it.`,
+    );
+    return;
+  }
+  console.log(`Finished crossword processor for NYT ${dateKey}`);
 }
 
 export let puzzleToClueCollection = (puzzle: ScrapedPuzzle): ClueCollection => {
